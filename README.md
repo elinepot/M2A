@@ -20,10 +20,10 @@ On retrouvra les unités d'enseignements (UE) que j'ai suivies ici :
 
 ## Semestre 2
 
-- Analyse statistique de graphes
-- Apprentissage statistique moderne
-- Confidentialité et équité algorithmique
-- Méthodes de simulation pour les modèles génératifs
-- Modélisation et statistique bayésienne computationnelle
-- Optimisation stochastique
-- Programmation parallèle à grande échelle sur GPU
+- Analyse statistique de graphes, par Catherine Matias
+- Apprentissage statistique moderne, par E. Aamari, C. Boyer, I. Castillo, E. Roquain
+- Confidentialité et équité algorithmique, par Christophe Denis et Rafael Pinot
+- Méthodes de simulation pour les modèles génératifs, par Sylvain Le Corff
+- Modélisation et statistique bayésienne computationnelle, par Nicolas Bousquet
+- Optimisation stochastique, par Antoine Godichon-Baggioni et Badr-Eddine Chérief-Abdellatif
+- Programmation parallèle à grande échelle sur GPU, par Lokman Abbas Turki
