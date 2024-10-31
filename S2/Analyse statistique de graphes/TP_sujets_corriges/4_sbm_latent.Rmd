@@ -1,0 +1,345 @@
+---
+title: "TP SBM et modèles latents"
+author: "Catherine Matias"
+date: ""
+output:
+  html_document:
+    df_print: paged
+---
+
+## Exercice 1. Simulation d'un SBM
+
+On note $n$ le nombre de noeuds, $\boldsymbol\pi=(\pi_1,\dots,\pi_K)$ les proportions des $K$ groupes latents,  et $\boldsymbol \gamma$ la matrice de connectivité (de taille $K\times K$) d'un modèle à blocs stochastiques. Dans cet exercice, on ne considère que des graphes binaires et non dirigés.
+
+
+1. Ecrire une fonction `rsbm()` qui 
+- prend en argument les paramètres d'un SBM définis ci-dessus,  
+- simule un graphe sous ce modèle et 
+- renvoie deux variables : sa matrice d'adjacence ainsi que les variables latentes. 
+
+
+2. Générer un SBM avec les paramètres suivants:  $n=15$,  $\pi=(1/2,1/2)$ et 
+$$\boldsymbol \gamma=\left(\begin{array}{ll}0.8&0.1\\0.1&0.6\end{array}\right),$$ 
+et visualiser le graphe simulé.
+
+3. Choisir les paramètres d'un modèle plus complexe (avec plus de groupes, modèle disassortatif etc.). Simuler un graphe, visualiser-le et visualiser aussi le métagraphe du modèle associé à la matrice de connectivité $\boldsymbol \gamma$, c'est-à-dire le graphe valué de $K$ noeuds tels que  
+- les $K$ noeuds ont des poids (covariables) données par $\pi$
+- chaque arête $(q,l)$ a le poids $\gamma_{q,l}$.
+ 
+
+**Remarque.**  Dans `igraph`, la fonction `sample_sbm()` permet aussi de simuler des SBM, mais c'est toujours un très bon exercice d'écrire sa propre fonction de simulation ! Par ailleurs, la fonction sample_sbm prend en entrée des tailles de groupes plutôt que des proportions, ce qui est légèrement différent de ce que vous avez fait ci-dessus. 
+ 
+ 
+##  Package `sbm`  
+
+Le package `sbm` regroupe les fonctions de plusieurs packages qui traitent des variantes du modèle à blocs stochastiques. L'idée est d'offrir à l'utilisateur une interface unique via un seul package avec des noms d'objet ou de fonction unifiés. Le package `sbm` est toujours en cours de développement. À terme il devrait inclure au moins 5 variantes ou extensions de SBM. 
+Pour l'analyse de SBM binaires ou valués, le package `sbm`  utilise les fonctions du package `blockmodels` dans lequel l'algorithme VEM que nous avons vu en cours est implémenté de manière très efficace.
+
+```{r, echo=FALSE}
+rsbm <- function(n, pi, gamma){
+  Q <- length(pi)
+  Z <- sample(1:Q, n, replace=TRUE, prob=pi) # variables latentes 
+  # adjacency matrix 
+  A <- matrix(0, n, n)
+  for (i in 1:(n-1)){
+      A[i, (i+1):n] <- A[(i+1):n, i] <- rbinom(n-i, 1, gamma[Z[i], Z[(i+1):n]])
+  }  
+  return(list(adj=A, Z=Z))
+}
+
+set.seed(4348)
+```
+Prenons un graphe simulé de l'exercice précédent :
+```{r}
+pi <- c(.5, .5) # group proportions  
+gamma <- matrix(c(0.8, 0.1,
+                  0.1, 0.6), nrow=2) # connectivity matrix 
+n <- 15 # number of nodes
+SBMcomm <- rsbm(n, pi, gamma)
+```           
+
+On charge le package `sbm` :
+```{r, message = FALSE, warning = FALSE}
+library(sbm)
+```
+La fonction `plotMyMatrix` affiche la matrice d'adjacence : 
+```{r}
+plotMyMatrix(SBMcomm$adj)
+```
+
+On voit bien que notre matrice d'adjacence est symétrique.
+
+La fonction  `estimateSimpleSBM` applique l'algorithme VEM à une matrice d'adjacence pour estimer les paramètres d'un SBM comme défini dans le cours. La fonction recherche  automatiquement le bon nombre de groupes $K$ selon le critère ICL. 
+Le deuxième argument de la fonction spécifie la distribution des arêtes. Pour le SBM binaire on choisit `"bernoulli"` (valeur par défaut). Si le SBM est valué, on a le choix entre `"poisson"` et `"gaussian"`. 
+Les valeurs de l'argument `estimOptions` que l'on choisit ci-dessous font taire la fonction pour le moment (on revient là-dessus plus tard). 
+(Pour info, `estimateSimpleSBM` appelle la fonction `BM_bernoulli` du package `blockmodels`). 
+
+```{r}
+mySimpleSBM <- estimateSimpleSBM(SBMcomm$adj, 
+                                 "bernoulli", 
+                                 estimOptions = list(verbosity = 0, plot = FALSE))
+mySimpleSBM
+```
+
+La sortie est un objet avec de nombreuses informations : les variables `nbNodes`, nbBlocks` et bien d'autres.
+
+```{r}
+# nb de noeuds dans le graphe (déjà connu)
+mySimpleSBM$nbNodes
+# nb de groupes K choisi par ICL (ici la méthode a choisi le bon nombre)
+mySimpleSBM$nbBlocks
+```
+
+ 
+Ici la fonction `plot` avec l'option `type = "data"` affiche la matrice d'adjacence où les noeuds sont réordonnés en fonction de leur appartenance de groupe dans le SBM : 
+
+```{r}
+plot(mySimpleSBM, type = "data")
+```
+
+On distingue bien les deux groupes et les différents profils de connexion des noeuds.
+
+Avec l'option `type = "expected"`, on peut   afficher la matrice des probabilités de connexion pour chaque paire de noeuds, ce qui correspond à l'espérance de la matrice d'adjacence :
+
+```{r}
+plot(mySimpleSBM, type = "expected")
+```
+
+C'est forcément une matrice par blocs. Les valeurs sont codées par des niveaux de gris. 
+
+Maintenant, intéressons-nous aux paramètres estimés par l'algorithme VEM. On les obtient avec la fonction `coef`.
+
+```{r}
+# les proportions de groupe :
+coef(mySimpleSBM, 'block')
+# qui devrait être proche de pi, mais comme il n'y a que 15 noeuds on est un peu loin :
+pi
+# les paramètres de connectivité
+coef(mySimpleSBM, 'connectivity')
+# que l'on espère proche du vrai gamma :
+gamma
+```
+
+Dans cet exemple, nous voyons bien que les groupes ont été permutés : c'est le groupe 2 qui a l'intra-connectivité la plus élevée, alors que dans la matrice `gamma` de départ c'est le groupe 1.
+Ce *problème de label-switching* est classique des modèles  à variables latentes : ils ne sont identifiables qu'à permutation près des groupes. Pour l'estimation par VEM, cela n'est pas vraiment gênant. En revanche, quand on compare les paramètres de deux modèles (comme ci-dessus les paramètres estimés au vraies valeurs des paramètres) il faut en tenir compter.
+
+Revenons à la sélection de modèle via le critère ICL. D'abord, nous relançons l'algorithme VEM, en permettant à la fonction de nous parler :
+```{r}
+mySimpleSBM <- estimateSimpleSBM(SBMcomm$adj, 
+                                 "bernoulli")
+```
+
+Les différents graphiques montrent comment l'algorithme VEM explore les modèles à des  nombres de groupes $K$ différents : en commençant à $K=1$, l'algorithme explore au fur et à mesure tous les modèles jusqu'à $K=4$ (les 4 premiers graphiques). Pour chaque valeur de $K$ le  point rouge  représente la valeur du critère ICL correspondant. Ensuite, l'algorithme repart   en arrière :   l'algorithme VEM est relancé  pour tous les modèles de $K=4$ à $K=1$. D'autres solutions sont trouvées et représentées par des nouveaux points dans les graphiques. Le maximum (actuel) en rouge, les maxima locaux en noir. Ce qui se cache derrière est une stratégie élaborée d'initialisation de VEM. On se sert, par exemple, de la solution à $K+1$ groupes pour initialiser l'algorithme à $K$ groupes (en fusionnant des groupes), ou, dans une passe ascendante, on utilise la solution à $K-1$ groupes pour initialiser le modèle à $K$ groupes (en coupant un groupe en deux). En fonction des données, la méthode va effectuer plusieurs passes et, si besoin, explorer des modèles avec plus de 4 groupes, jusqu'à obtenir une courbe ICL bien lissée. 
+
+En fait, les résultats de l'algorithme VEM sont très sensibles à l'intialisation et une stratégie d'intialisation sophisitiquée est nécessaire pour trouver l'estimateur de maximum de vraisemblance. Et même avec de nombreuses intialisations, on ne peut  jamais être sûr d'avoir trouvé le maximum global.
+
+On peut afficher les valeurs de l'ICL pour les différents modèles :
+```{r}
+mySimpleSBM$storedModels
+```
+
+ou encore tracer la courbe ICL :
+```{r, message = FALSE, warning = FALSE}
+library(ggplot2)
+mySimpleSBM$storedModels %>% 
+  ggplot() + 
+    aes(x = nbBlocks, y = ICL) + 
+    geom_line() + 
+    geom_point(alpha = 0.5)
+```
+
+Le maximum est bien atteint en $K=2$.
+
+
+Afin d'étudier un autre modèle que celui qui maximise l'ICL on utilise la méthode `setModel` :
+```{r}
+mySimpleSBM$setModel(3)
+mySimpleSBM$nbBlocks
+mySimpleSBM$plot(type = 'data')
+mySimpleSBM$plot(type = 'expected')
+# les proportions de groupe :
+coef(mySimpleSBM, 'block')
+# les paramètres de connectivité
+coef(mySimpleSBM, 'connectivity')
+``` 
+
+Comparons les clusterings trouvés à $K=2$ et à $K=3$ groupes :
+```{r}
+# clustering du modèle actuel à K=3 groupes :
+clustK3 <- mySimpleSBM$memberships
+clustK3
+# remettre le modèle actuel à K=2 :
+mySimpleSBM$setModel(2)
+clustK2 <- mySimpleSBM$memberships
+clustK2
+# comparer les deux clusterings :
+table(clustK3, clustK2)
+```
+
+On observe que le groupe 1 du modèle à deux groupes à été divisé en deux groupes (les groupes 1 et 3 du modèle à trois groupes). L'ICL juge que ce n'est pas pertinent de travailler avec le modèle affiné et qu'il faut privilégier le modèle à deux groupes.
+
+## Métriques pour comparer des clusterings
+
+Dans un problème de classification dans un cadre supervisé, il est  facile de 
+définir l'erreur ou une métrique pour comparer les résultats d'un classifieur avec 
+la vérité. 
+En non supervisé, c'est différent à cause du problème de label switching. En fait,
+ce qu'on cherche est juste le bon partitionnement, mais pas les labels exacts, ou en tout cas pas à permutation près.   Donc, 
+une bonne métrique pour comparer deux clusterings doit être invariante aux permutations
+des labels. Cela complique la définition d'une erreur de clustering ou d'une métrique 
+qui compare deux clusterings.
+
+Dans la litérature, on en trouve plusieurs. Les plus connus sont le **rand Index** (**RI**), le **adjusted Rand index** (**ARI**) et la **normalized mutual information** (**NMI**).
+
+###  Rand index
+
+Soit $S=\{1,\dots,n\}$ un ensemble de $n$ objets.
+Soient $U=(u_1,\dots,u_n)$ et $V=(v_1,\dots,v_n)$ deux clusterings ou partitionnements des  objets dans $S$.
+On définit
+
+- $a$ comme le nombre de paires d'objets classés dans un même groupe dans $U$ et classés dans un même groupe dans $V$ :
+$$a= \sum_{1\leq i<j\leq n} \mathbb 1\{u_i=u_j\}\mathbb 1\{v_i=v_j\}
+$$
+- $b$ comme le nombre de paires d'objets classés dans un même groupe dans $U$  mais pas classés dans un même groupe dans $V$ :
+$$b= \sum_{1\leq i<j\leq n} \mathbb 1\{u_i=u_j\}\mathbb 1\{v_i\neq v_j\}
+$$
+- $c$ comme le nombre de paires d'objets classés dans des groupes différents dans $U$ et dans un  même groupe dans $V$ :
+$$c= \sum_{1\leq i<j\leq n} \mathbb 1\{u_i\neq u_j\}\mathbb 1\{v_i= v_j\}
+$$
+- $d$ comme le nombre de paires d'objets classés dans des groupes différents dans $U$  comme dans $V$ :
+$$d= \sum_{1\leq i<j\leq n} \mathbb
+1\{u_i\neq u_j\}\mathbb 1\{v_i\neq v_j\}
+$$
+Les quantités $a$ et $d$ mesurent l'adéquation des clusterings $U$ et $V$, alors que $b$ et $c$ quantifient leur divergence. 
+
+
+Le **Rand index** (Rand, 1971) est défini par
+$$R\!I=\frac{a+d}{a+b+c+d}=\frac{a+d}n.$$
+**Question :** 
+Quelles sont les valeurs possibles du $RI$? Quel est sa valeur quand les deux clusterings sont identiques ?
+
+
+
+### Adjusted Rand index
+Afin de gagner en interprétabilité, une version normalisée du Rand index a été proposée, l'**ajusted Rand index** (**ARI**). La normalisation est faite en sorte que l'ARI vaut (en moyenne) 0 si l'un des clustering est un rééchantillonnage aléatoire de l'autre.
+
+
+### Normalized mutual information
+Pour définir cette métrique, on interprète les clusterings $U$ et $V$ comme des réalisations de variables aléatoires discrètes.
+Notons $K$ et $L$ le nombre de classes des partitionnement $U$ et $V$, resp.
+La métrique  **normalized mutual information** (**NMI**) est une version normalisée entre 0 et 1 de l'information mutuelle. La **mutual information** est 
+définie comme la divergence de Kullback-Leibler entre la loi jointe $p_{U,V}$ et la loi produit $p_{U}\otimes p_{V}$ :
+\begin{align*}
+N\!M\!I&=
+KL(p_{U,V}\| p_{U}\otimes p_{V})\\
+&=\sum_{k=1}^K\sum_{l=1}^L p_{U,V}(k,l) \log\frac{p_{U,V}(k,l)}{p_{U}(k)p_{V}(l)},\qquad\text{où}\\
+&p_{U,V}(k,l)= \frac1n\sum_{  i=1}^n  \mathbb 1\{u_i=k, v_i=l\}\\
+&p_{U}(k)= \frac1n\sum_{  i=1}^n  \mathbb 1\{u_i=k\}\\
+&p_{V}(l)= \frac1n\sum_{  i=1}^n  \mathbb 1\{v_i=l\}.
+\end{align*}
+La MI et le  NMI sont égaux à 0 si et seulement si la loi jointe $p_{U,V}$ est égale à la  loi produit 
+$p_{U}\otimes p_{V}$. Autrement dit, la MI et le NMI sont 0 si les deux clusterings sont indépendants. On peut voir la MI comme une quantification de l'information sur un clustering que l'on peut extraire à partir de l'autre clustering. La valeur maximale prise par la MI dépend des clusterings considérés, c'est pourquoi la NMI est normalisée de sorte que pour deux clustering cette quantité est au maximum 1 (dans les deux clusterings sont les mêmes).  
+
+
+
+### Avec R
+Ces métriques sont implementées dans différents  packages. L'ARI par exemple est implementé dans le package `mclust` :
+```{r, message = FALSE, warning = FALSE}
+library(mclust)
+clust_a <- rep(1:3, 3)
+clust_b <- rep(c("A", "B", "C"), 3)
+adjustedRandIndex(clust_a, clust_b)
+```
+
+Pour le NMI on peut utiliser le  package `aricode` : 
+```{r,message = FALSE, warning = FALSE}
+library(aricode)
+NMI(clust_a, clust_b)
+```
+
+Par ailleurs,  le package `aricode` contient la fonction `clustComp()` qui calcule 12 métriques différentes pour comparer deux clustering dont le RI, ARI et le NMI :
+```{r}
+unlist(clustComp(clust_a, clust_b))
+```
+
+
+
+## Exercice 2.
+
+- Vérifier sur des exemples quelles sont les valeurs possibles du RI, de l'ARI et du NMI. Quelle valeur lorsque deux clusterings sont identiques ? 
+- Faites des simulations répétées pour estimer la moyenne du RI, de l'ARI et du NMI lorsque l'un des clustering est une permutation aléatoire de l'autre clustering.  Qu'observez-vous ?
+- Question pour résumer ce qui est important : Comment interpréter une valeur de 1, 0.7 ou de 0 du RI ? de l'ARI ?  ou de la NMI ? 
+
+
+
+## Exercice 3.
+
+1. Reprenez un des graphes simulés à l'Exercice 1  et  ajustez un SBM aux données. Retrouve-t-on  les bonnes valeurs des paramètres ? et le clustering d'origine ? 
+
+2. Considérons le modèle à blocs stochastiques avec les paramètres suivants :  $K=4$ groupes, $\boldsymbol\pi=(1/4,1/4,1/4,1/4)$ et 
+$$\boldsymbol \gamma=\left(\begin{array}{llll}
+0.2& 0.7&0.1&0.5\\
+0.7&0.7&0.1&0.5\\
+0.1&0.1&0.9&0.5\\
+0.5&0.5&0.5&0.1
+\end{array}\right).$$ 
+Générer un graphe à $n=20$ noeuds et ajuster un SBM sur les données. Qu'observez-vous? Que se passe-t-il quand on augmente le nombre de noeuds?
+ 
+3.   Appliquer le  spectral clustering normalisé  et le 
+  spectral clustering avec $L_{\text{abs}}$ aux graphes de la question précédente. Retrouve-t-on les bons
+  groupes?
+
+4. Reprendre le petit jeu de données karate du TP1 (disponible dans R).  Ajuster un
+    modèle SBM pour faire un clustering des noeuds. Appliquer les
+    algorithmes de spectral clustering normalisé et le spectral clustering avec $L_{\text{abs}}$. Comparer les clustering obtenus. 
+    
+    
+    
+## Latent position model 
+
+On utilise ici le R  package `latentnet` qui ajuste un modèle à espace latent continu. 
+Le package contient le jeu de données  `samplike` avec des observations sur des relations sociales de moines dans un monastère. Il a été construit dans `latentnet` à partir des données `sampson` : au début on appelle ce dataset et ensuite on travaille avec `samplike`. 
+
+On commence par installer le package et charger  le jeu de données 
+
+```{r,message = FALSE, warning = FALSE}
+#install.packages('latentnet')
+library('latentnet')
+data(sampson) # warning on appelle sampson et pas samplike comme partout dans la suite
+```
+
+### Exercice 4.  
+**Question 1 :** 
+
+- Familiarisez vous avec les données par  les instructions `help(samplike)` et `summary(samplike)`. Le graphe est-il dirigé ? Quel est l'ordre du graphe ? Sa taille ? La densité du graphe ? Déterminez les degrés des n\oe uds. (Warning, le graphe n'est pas au format `igraph` mais vous pouvez vous débrouiller à la main ou avec des fonctions du package `latentnet`).
+- Faites une représentation graphique du graphe en utilisant la
+  fonction  `plot.network` du package latentnet.
+
+
+Le jeu de  données contient des covariables sur tous les moines, stockées dans la variable `samplike\$val` : le prénom, l'appartenance à un des groupes `Outcasts`, `Turks` et `Loyal`, et une variables binaire appelée `cloisterville`.
+
+**Question 2 :** 
+
+- Créer un vecteur contenant les  prénoms des moines, un vecteur de l'appartenance de groupe et un vecteur avec les valeurs de `cloisterville`. 
+- Comment visualiser les informations des covariables sur le graphe ?
+
+
+
+**Question 3 :** La fonction `ergmm` estime les paramètres du modèle ainsi que les positions latentes des noeuds. Elle prend en argument une formule de  régression. 
+Pour connaître la forme des régressions possibles : 
+```{r}
+help("terms.ergmm")
+```
+
+
+-  Estimer les  positions latentes des données `samplike` en utilisant  la distance euclidienne  entre les positions latentes (avec $d=2$) sans tenir compte des covariables et sans faire du clustering.
+- Représenter graphiquement les positions latentes estimées. Ajouter au graphe l'appartenance de groupe des moines (par des couleurs).
+- Répéter l'étape d'estimation en ajoutant un clustering des données en trois groupes.
+
+**Question 4 :** 
+La fonction `simulate` permet de simuler un graphe à positions latentes. 
+
+-  Simulez  des graphes selon  les modèles  que vous venez d'ajuster. 
+- Estimez  les positions latentes du modèle avec la même  formule. Que constatez-vous ? 
+
+    

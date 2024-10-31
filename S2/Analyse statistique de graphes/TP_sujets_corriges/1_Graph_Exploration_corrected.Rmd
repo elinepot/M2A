@@ -1,0 +1,209 @@
+---
+title: "Graph Exploration - Correction Elements"
+author: "Catherine Matias"
+date: "October 2023"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(igraph)
+library("ggplot2")
+```
+
+# Graph Friendship
+
+```{r}
+friends <- read.table(file='Friendship-network_data_2013.csv')
+G <- graph_from_data_frame(friends, directed=TRUE) 
+V(G)
+E(G)
+is.directed(G)
+```
+
+We have a graph of 134 nodes and 668 directed edges. Nodes have attributes which are names:
+
+```{r}
+vertex_attr(G)
+```
+
+Let's display the sequence of incoming degrees of the graph
+```{r}
+degree(G,mode="in")
+```
+
+You notice that each node appears with its name and its degree. We can draw a barplot of this distribution
+```{r}
+par(mfrow=c(1,2))
+barplot(degree_distribution(G,mode="in"),main="Indegree Distribution")
+barplot(degree_distribution(G,mode="out"),main="Indegree Distribution")
+```
+
+Note that by default we do not have the x-coordinates. You should know that `degree_distribution` starts by listing the nodes of degree 0 (isolated). 
+
+By hand :
+```{r}
+par(mfrow=c(1,2))
+barplot(degree_distribution(G,mode="in"),names.arg=as.character(0:max(degree(G,mode="in"))), main="Indegree Distribution")
+barplot(degree_distribution(G,mode="out"),names.arg=as.character(0:max(degree(G,mode="out"))), main="Outdegree Distribution")
+```
+
+Or again by hand (in counts rather than frequencies; and zero counts are ignored)
+```{r}
+barplot(table(degree(G,mode="in")))
+```
+
+
+Much more elegant, with `ggplot2`:
+```{r}
+degree.df <- data.frame(deg=0:max(degree(G,mode="out")), freq=degree_distribution(G,mode="out"))
+p <- ggplot(degree.df, aes(x=deg, y=freq)) + geom_bar(stat="identity",color="blue")
+p + ggtitle("Outdegree Distribution")
+```
+
+Let's study the connected components of G:
+
+```{r}
+plot(G)
+components(G)                      
+```
+
+This graph has 3 connected components (cc), of respective sizes 128, 3 and 3. The second connected component contains the nodes "124", "471" and "970". The density and diameter of the graph are
+
+
+```{r}
+edge_density(G)
+diameter(G, directed=TRUE, unconnected=FALSE)
+diameter(G, directed=TRUE, unconnected=TRUE)
+```
+
+The density of the graph is approximately 3.7%
+The diameter, calculated over the entire graph, is infinite (since there are multiple ccs). With the `unconnected=TRUE` option we obtain the maximum value of the diameter calculated on each component. To see the longest (directed) path in the graph (or one of the longest if there are several):
+
+```{r}
+get_diameter(G, directed=TRUE)
+```
+
+Beware: by default, `diameter` computes the weighted longest shortest path. Example
+```{r}
+library(igraphdata)
+data(karate)
+diameter(karate)
+get_diameter(karate)
+is.weighted(karate)
+```
+
+
+We can calculate, at each node of the graph, the number of (undirected) triangles to which it belongs
+
+```{r}
+count_triangles(G)
+```
+
+The clustering coefficient is defined locally as the connection frequency between the neighbors of a node. 
+
+```{r}
+transitivity(G,type="local") # Clustering coefficient
+```
+
+There are NaN values for nodes that do not have at least two neighbors.
+```{r}
+for (v in V(G)[is.nan(transitivity(G,type="local"))]){
+  print(paste0("Le noeud ",v, " a pour degré ", degree(G,mode="total")[v], " et intervient dans ",count_triangles(G)[v] , " triangles"))
+}
+```
+
+Interestingly, there are 3 nodes which have degree 2 and clustering coefficient NaN. Do you understand why? Hint: Look at which edges include a particular node
+```{r}
+neighbors(G, 32, mode='all')
+E(G)[.inc(32)]
+```
+
+The clustering coefficient is the average of the local coefficient
+```{r}
+mean(transitivity(G,type="local"),na.rm=TRUE)
+```
+
+And the transitivity coefficient (default, `type="global"`)
+
+```{r}
+transitivity(G)
+```
+
+We can see the neighbors of a particular node 
+```{r}
+neighbors(G, 4,  mode='out')
+neighbors(G, 4, mode='in')
+neighbors(G, 4, mode='all')
+```
+
+
+By calculating the cliques of size 3, we find that there are 451 triangles in G:
+```{r}
+K3 <- cliques(G, min=3, max=3)
+K3[[1]] 
+length(K3) 
+sum(count_triangles(G))/3
+
+```
+
+Centrality only makes sense for connected graphs. We therefore focus on the largest connected component of the graph (for the record, it was number 1, of size 128).
+
+```{r}
+G1 <- induced_subgraph(G,V(G)[components(G)$membership==1])
+V(G1)
+```
+
+We calculate the closeness centrality. Be careful as the graph is directed, taking into account (or not) the direction changes the result.
+
+```{r}
+closeness(G1,mode="total") 
+closeness(G1)
+```
+
+
+For betweenness centrality
+```{r}
+betweenness(G1)
+plot(G, vertex.size=betweenness(G))
+```
+
+
+To count motifs or patterns, we can use `count_subgraph_isomorphisms`. Here we will first remove the directions (but we can look for a directed motif too)
+
+```{r}
+Two.star <- make_star(3,mode="undirected")
+Three.star <- make_star(4,mode="undirected")
+plot(Two.star)
+plot(Three.star)
+G_undirected <- as.undirected(G)
+count_subgraph_isomorphisms(Two.star,G_undirected)
+count_subgraph_isomorphisms(Three.star,G_undirected)
+
+# with a directed motif  
+Two.stard <- make_star(3)
+count_subgraph_isomorphisms(Two.stard,G)
+```
+
+Finally, to count all the small patterns up to a fixed number of nodes `size' (by default it is 3) we can use
+
+
+```{r}
+motifs(G_undirected)
+```
+
+There are 4 different undirected patterns on 3 nodes:
+   - the empty pattern of order 3
+   - a single edge on 3 nodes
+   - the "V" pattern ie the 'Two.star' pattern above
+   - the triangle.
+
+When we calculate the 'patterns' function on a graph (and 'size'=3 by default), we therefore obtain 4 values. The first two values (which correspond to the empty pattern of order 3 and to a single edge on 3 nodes respectively) are worth NA. This is because if the pattern is not connected, then the answer of this function is NA.
+
+
+Then, the function counts the number of induced "V" patterns (ie the 'Two.star' pattern above). Please note, this is not the number of connected triples, because a triangle does not count as a 'Two.star' (there is one edge too many). Finally, the last value is the number of triangles.

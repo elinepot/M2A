@@ -1,0 +1,1 @@
+UE[[:space:]]info/AMAL/TMEs/TME7/src/runs/*.tfevents.* filter=lfs diff=lfs merge=lfs -text
